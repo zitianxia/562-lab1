@@ -83,6 +83,13 @@ class TwoLayerNet(object):
         self.params[f'W{self.num_layers}'] = weight_scale * np.random.randn(layer_in, num_classes)
         self.params[f'b{self.num_layers}'] = np.zeros(num_classes)
 
+        #dropout
+        self.use_dropout = dropout != 1
+        self.dropout_param = {}
+        if self.use_dropout:
+            self.dropout_param = {"mode": "train", "p": dropout}
+            if seed is not None:
+                self.dropout_param["seed"] = seed
 
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -135,10 +142,14 @@ class TwoLayerNet(object):
                 a, norm_cache = layernorm_forward(a, gamma, beta, self.ln_params[i-1])
 
             out, relu_cache = relu_forward(a)
+            #dropout
+            do_cache = None
+            if self.use_dropout:
+                out, do_cache = dropout_forward(out, self.dropout_param)
             caches.append((fc_cache, norm_cache, relu_cache))
 
-        W_last, b_last = self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}']
-        scores, cache_last = affine_forward(out, W_last, b_last)
+            W_last, B_last = self.params[f"W{self.num_layers}"], self.params[f"b{self.num_layers}"]
+            scores, cache_last = affine_forward(out, W_last, B_last)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -175,6 +186,9 @@ class TwoLayerNet(object):
             fc_cache, norm_cache, relu_cache = caches[i - 1]
             dx = relu_backward(dx, relu_cache)
 
+            if self.use_dropout:
+                dx = dropout_backward(dx, do_cache)
+                
             if self.normalization == 'batchnorm':
                 dx, dgamma, dbeta = batchnorm_backward(dx, norm_cache)
                 grads[f'gamma{i}'] = dgamma
