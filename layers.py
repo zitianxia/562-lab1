@@ -203,7 +203,15 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        sample_mean = np.mean(x, axis=0)
+        sample_var = np.var(x, axis=0)
+        x_mu = x - sample_mean
+        std = np.sqrt(sample_var + eps)
+        x_hat = x_mu / std
+        out = gamma * x_hat + beta
+        cache = (x_hat, gamma, x_mu, std, sample_var, eps)
+        running_mean = momentum * running_mean + (1 - momentum) * sample_mean
+        running_var = momentum * running_var + (1 - momentum) * sample_var
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -218,7 +226,9 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        x_hat = (x - running_mean) / np.sqrt(running_var + eps)
+        out = gamma * x_hat + beta
+        cache = None
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -260,7 +270,14 @@ def batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x_hat, gamma, x_mu, std, sample_var, eps = cache
+    N, D = dout.shape
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(dout * x_hat, axis=0)
+    dx_hat = dout * gamma
+    dvar = np.sum(dx_hat * x_mu * (-0.5) * (sample_var + eps) ** (-1.5), axis=0)
+    dmean = np.sum(-dx_hat / std, axis=0) + dvar * np.sum(-2.0 * x_mu, axis=0) / N
+    dx = dx_hat / std + (2.0 / N) * dvar * x_mu + dmean / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -294,8 +311,14 @@ def batchnorm_backward_alt(dout, cache):
     # single statement; our implementation fits on a single 80-character line.#
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    x_hat, gamma, x_mu, std, sample_var, eps = cache
+    N, D = dout.shape
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(dout * x_hat, axis=0)
+    dx_hat = dout * gamma
+    sum_dxhat = np.sum(dx_hat, axis=0)
+    sum_dxhat_xhat = np.sum(dx_hat * x_hat, axis=0)
+    dx = (1.0 / (N * std)) * (N * dx_hat - sum_dxhat - x_hat * sum_dxhat_xhat)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -341,7 +364,13 @@ def layernorm_forward(x, gamma, beta, ln_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    eps = ln_param.get('eps', 1e-5)
+    mu = np.mean(x, axis=1, keepdims=True)
+    var = np.var(x, axis=1, keepdims=True)
+    std = np.sqrt(var + eps)
+    x_hat = (x - mu) / std
+    out = gamma * x_hat + beta
+    cache = (x_hat, gamma, std)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -376,7 +405,15 @@ def layernorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x_hat, gamma, std = cache
+    N, D = dout.shape
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(dout * x_hat, axis=0)
+    dx_hat = dout * gamma
+    sum_dxhat = np.sum(dx_hat, axis=1, keepdims=True)
+    sum_dxhat_xhat = np.sum(dx_hat * x_hat, axis=1, keepdims=True)
+    dx = (1.0 / (D * std)) * (D * dx_hat - sum_dxhat - x_hat * sum_dxhat_xhat)
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################

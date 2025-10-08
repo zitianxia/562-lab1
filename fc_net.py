@@ -55,10 +55,35 @@ class TwoLayerNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        self.params["W1"] = weight_scale * np.random.randn(input_dim, hidden_dim)
-        self.params["b1"] = np.zeros(hidden_dim)
-        self.params["W2"] = weight_scale * np.random.randn(hidden_dim, num_classes)
-        self.params["b2"] = np.zeros(num_classes)
+        layer_input_dim = input_dim
+        for i, h in enumerate(hidden_dims, start=1):
+            self.params[f"W{i}"] = weight_scale * np.random.randn(layer_input_dim, h)
+            self.params[f"b{i}"] = np.zeros(h)
+            if self.normalization == "batchnorm":
+                self.params[f"gamma{i}"] = np.ones(h)
+                self.params[f"beta{i}"]  = np.zeros(h)
+            layer_input_dim = h
+        self.params[f"W{self.num_layers}"] = weight_scale * np.random.randn(layer_input_dim, num_classes)
+        self.params[f"b{self.num_layers}"] = np.zeros(num_classes)
+        #normalization
+        self.normalization = normalization
+        if self.normalization == 'batchnorm':
+            self.bn_params = [{'mode': 'train'} for _ in range(len(hidden_dims))]
+        elif self.normalization == 'layernorm':
+            self.ln_params = [{'eps': 1e-5} for _ in range(len(hidden_dims))]
+
+        layer_in = input_dim
+        for i, H in enumerate(hidden_dims, start=1):
+            self.params[f'W{i}'] = weight_scale * np.random.randn(layer_in, H)
+            self.params[f'b{i}'] = np.zeros(H)
+            if self.normalization in ('batchnorm', 'layernorm'):
+                self.params[f'gamma{i}'] = np.ones(H)
+                self.params[f'beta{i}'] = np.zeros(H)
+            layer_in = H
+        self.params[f'W{self.num_layers}'] = weight_scale * np.random.randn(layer_in, num_classes)
+        self.params[f'b{self.num_layers}'] = np.zeros(num_classes)
+
+
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -90,12 +115,30 @@ class TwoLayerNet(object):
         # class scores for X and storing them in the scores variable.              #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+        out = X
+        caches = []
 
-        W1, b1 = self.params["W1"], self.params["b1"]
-        W2, b2 = self.params["W2"], self.params["b2"]
-        out1, cache1 = affine_relu_forward(X, W1, b1)
-        scores, cache2 = affine_forward(out1, W2, b2)
+        if self.normalization == 'batchnorm':
+            for bn_param in self.bn_params:
+                bn_param['mode'] = 'train' if y is not None else 'test'
 
+        for i in range(1, self.num_layers):
+            Wi, bi = self.params[f'W{i}'], self.params[f'b{i}']
+            a, fc_cache = affine_forward(out, Wi, bi)
+
+            norm_cache = None
+            if self.normalization == 'batchnorm':
+                gamma, beta = self.params[f'gamma{i}'], self.params[f'beta{i}']
+                a, norm_cache = batchnorm_forward(a, gamma, beta, self.bn_params[i-1])
+            elif self.normalization == 'layernorm':
+                gamma, beta = self.params[f'gamma{i}'], self.params[f'beta{i}']
+                a, norm_cache = layernorm_forward(a, gamma, beta, self.ln_params[i-1])
+
+            out, relu_cache = relu_forward(a)
+            caches.append((fc_cache, norm_cache, relu_cache))
+
+        W_last, b_last = self.params[f'W{self.num_layers}'], self.params[f'b{self.num_layers}']
+        scores, cache_last = affine_forward(out, W_last, b_last)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -120,15 +163,33 @@ class TwoLayerNet(object):
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
         data_loss, dscores = softmax_loss(scores, y)
-        reg_loss = 0.5 * self.reg * (np.sum(W1 * W1) + np.sum(W2 * W2))
+        reg_loss = 0.5 * self.reg * sum(np.sum(self.params[f'W{i}']**2)
+                                        for i in range(1, self.num_layers + 1))
         loss = data_loss + reg_loss
+
         grads = {}
-        dout1, dW2, db2 = affine_backward(dscores, cache2)
-        dW2 += self.reg * W2
-        dX, dW1, db1 = affine_relu_backward(dout1, cache1)
-        dW1 += self.reg * W1
-        grads["W1"], grads["b1"] = dW1, db1
-        grads["W2"], grads["b2"] = dW2, db2
+        dx, dW, db = affine_backward(dscores, cache_last)
+        grads[f'W{self.num_layers}'] = dW + self.reg * self.params[f'W{self.num_layers}']
+        grads[f'b{self.num_layers}'] = db
+        for i in range(self.num_layers - 1, 0, -1):
+            fc_cache, norm_cache, relu_cache = caches[i - 1]
+            dx = relu_backward(dx, relu_cache)
+
+            if self.normalization == 'batchnorm':
+                dx, dgamma, dbeta = batchnorm_backward(dx, norm_cache)
+                grads[f'gamma{i}'] = dgamma
+                grads[f'beta{i}'] = dbeta
+            elif self.normalization == 'layernorm':
+                dx, dgamma, dbeta = layernorm_backward(dx, norm_cache)
+                grads[f'gamma{i}'] = dgamma
+                grads[f'beta{i}'] = dbeta
+
+            dx, dW, db = affine_backward(dx, fc_cache)
+            grads[f'W{i}'] = dW + self.reg * self.params[f'W{i}']
+            grads[f'b{i}'] = db
+
+
+
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
